@@ -1,76 +1,77 @@
-from flask import Flask, request, jsonify
-import pickle
-import numpy as np
-import pandas as pd
-import logging
 import os
+import logging
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pickle
+import pandas as pd
 
+# Initialize Flask app
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
 
-# Load the model, scaler, and prediction statements (using environment variables for production)
+# Load artifact paths from env (with defaults)
 MODEL_PATH = os.getenv('MODEL_PATH', 'rf_model.pkl')
 SCALER_PATH = os.getenv('SCALER_PATH', 'scaler.pkl')
-PREDICTION_STATEMENTS_PATH = os.getenv('PREDICTION_STATEMENTS_PATH', 'prediction_statements.pkl')
+STATEMENTS_PATH = os.getenv('STATEMENTS_PATH', 'prediction_statements.pkl')
 
+# Load model, scaler, and statements
 try:
     with open(MODEL_PATH, 'rb') as f:
         model = pickle.load(f)
-
     with open(SCALER_PATH, 'rb') as f:
         scaler = pickle.load(f)
-
-    with open(PREDICTION_STATEMENTS_PATH, 'rb') as f:
+    with open(STATEMENTS_PATH, 'rb') as f:
         prediction_statements = pickle.load(f)
+    logging.info("Loaded model, scaler, and prediction statements.")
 except Exception as e:
-    logging.error(f"Error loading model/scaler/prediction statements: {e}")
+    logging.error(f"Error loading artifacts: {e}")
     raise
 
 @app.route('/', methods=['GET'])
-def index():
-    return jsonify({"message": "Heart Disease Prediction API is running."})
+def health_check():
+    return jsonify({"message": "Heart Disease Prediction API is up"}), 200
 
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # Get JSON data from the request
         data = request.get_json(force=True)
-
-        # List of required fields
         required_fields = [
             'Age', 'Gender', 'ChestPainType', 'RestingBP', 'Cholesterol',
             'FastingBS', 'RestECG', 'MaxHR', 'ExerciseAngina',
             'Oldpeak', 'Slope', 'CA', 'Thal'
         ]
 
-        # Check if all required fields are present in the incoming data
-        if not all(field in data for field in required_fields):
-            return jsonify({'error': 'Missing one or more required fields.'}), 400
+        # Validate payload
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            return jsonify({'error': f'Missing fields: {missing}'}), 400
 
-        # Create DataFrame for the incoming data
+        # Prepare features
         df = pd.DataFrame([data])
+        X = scaler.transform(df)
 
-        # Scale the features using the scaler
-        scaled_features = scaler.transform(df)
+        # Predict
+        pred_class = int(model.predict(X)[0])
+        pred_proba = float(model.predict_proba(X)[0][pred_class])
+        statement = prediction_statements[pred_class]
 
-        # Predict using the model
-        prediction = model.predict(scaled_features)[0]
-        probability = model.predict_proba(scaled_features)[0][prediction]
-        statement = prediction_statements[prediction]
-
-        # Return the prediction, probability, and statement
         return jsonify({
-            'prediction': int(prediction),
-            'statement': statement,
-            'probability': float(probability)
-        })
+            'prediction': pred_class,
+            'probability': pred_proba,
+            'statement': statement
+        }), 200
 
     except Exception as e:
-        logging.error(f"Error during prediction: {e}")
-        return jsonify({'error': 'An error occurred during prediction.'}), 500
+        logging.error(f"Prediction error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    # Set to False to disable debug mode in production
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Bind to 0.0.0.0 and use PORT env var (default 5000)
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
