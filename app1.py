@@ -15,10 +15,10 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s'
 )
 
-# Load artifact paths from env (with defaults)
-MODEL_PATH = os.getenv('MODEL_PATH', 'rf_model.pkl')
-SCALER_PATH = os.getenv('SCALER_PATH', 'scaler.pkl')
-STATEMENTS_PATH = os.getenv('STATEMENTS_PATH', 'prediction_statements.pkl')
+# Define paths to the model, scaler, and statements files
+MODEL_PATH = os.getenv('MODEL_PATH', './model/rf_model.pkl')
+SCALER_PATH = os.getenv('SCALER_PATH', './model/scaler.pkl')
+STATEMENTS_PATH = os.getenv('STATEMENTS_PATH', './model/prediction_statements.pkl')
 
 # Load model, scaler, and statements
 try:
